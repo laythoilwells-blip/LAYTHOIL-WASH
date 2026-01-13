@@ -1,18 +1,15 @@
 
 import React, { useState } from 'react';
-import { Camera, Video, Send, Save, CheckCircle, Wifi, WifiOff, Loader2, AlertTriangle } from 'lucide-react';
+import { Camera, Video, FileText, Send, Save, CheckCircle, Wifi, WifiOff, Loader2 } from 'lucide-react';
 import { useVideoProcessor } from '../../hooks/useVideoProcessor';
-import { supabase } from '../../integrations/supabase/client';
-import { useAuth } from '../../hooks/useAuth';
 
 const DocumentTransfer: React.FC = () => {
   const [step, setStep] = useState(1);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { compressVideo, isProcessing, progress, error: processingError } = useVideoProcessor();
-  const { user } = useAuth();
   
   const [formData, setFormData] = useState({
-    hospital_id: '',
+    hospital: '',
     quantity: '',
     chlorineVideo: null as File | null,
     dischargeVideo: null as File | null,
@@ -21,7 +18,6 @@ const DocumentTransfer: React.FC = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -49,55 +45,30 @@ const DocumentTransfer: React.FC = () => {
     }
   };
 
-  const uploadFile = async (file: File, bucket: string) => {
-    const fileName = `${Date.now()}_${file.name}`;
-    const { data, error } = await supabase.storage.from(bucket).upload(fileName, file);
-    if (error) throw error;
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
-    return urlData.publicUrl;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError(null);
     
-    try {
-      if (isOnline) {
-        // 1. رفع الملفات إلى Storage
-        const chlorineUrl = await uploadFile(formData.chlorineVideo!, 'chlorine-videos');
-        const dischargeUrl = await uploadFile(formData.dischargeVideo!, 'discharge-videos');
-        const receiptUrl = await uploadFile(formData.receiptImage!, 'receipt-images');
-
-        // 2. حفظ السجل في قاعدة البيانات
-        const { error: dbError } = await supabase.from('transfer_records').insert({
-          driver_id: user?.id,
-          hospital_id: parseInt(formData.hospital_id),
-          water_quantity: parseFloat(formData.quantity),
-          chlorine_video_url: chlorineUrl,
-          discharge_video_url: dischargeUrl,
-          receipt_image_url: receiptUrl,
-          status: 'pending'
-        });
-
-        if (dbError) throw dbError;
-      } else {
-        // حفظ محلي في حال عدم وجود إنترنت
+    // Simulate API call or offline saving
+    setTimeout(() => {
+      setIsSubmitting(false);
+      setIsSuccess(true);
+      if (!isOnline) {
         const pending = JSON.parse(localStorage.getItem('pending_uploads') || '[]');
-        pending.push({
-          ...formData,
-          driver_id: user?.id,
-          timestamp: new Date().toISOString()
-        });
+        // Create a serializable version of the data for storage
+        const serializableData = {
+          hospital: formData.hospital,
+          quantity: formData.quantity,
+          timestamp: new Date().toISOString(),
+          // In real offline app, we'd store blobs in IndexedDB, not localStorage
+          hasChlorine: !!formData.chlorineVideo,
+          hasDischarge: !!formData.dischargeVideo,
+          hasReceipt: !!formData.receiptImage
+        };
+        pending.push(serializableData);
         localStorage.setItem('pending_uploads', JSON.stringify(pending));
       }
-      
-      setIsSuccess(true);
-    } catch (err: any) {
-      setError(err.message || 'حدث خطأ أثناء رفع البيانات');
-    } finally {
-      setIsSubmitting(false);
-    }
+    }, 2000);
   };
 
   if (isSuccess) {
@@ -115,7 +86,7 @@ const DocumentTransfer: React.FC = () => {
           </p>
         </div>
         <button 
-          onClick={() => { setIsSuccess(false); setStep(1); setFormData({hospital_id: '', quantity: '', chlorineVideo: null, dischargeVideo: null, receiptImage: null}); }}
+          onClick={() => { setIsSuccess(false); setStep(1); setFormData({hospital: '', quantity: '', chlorineVideo: null, dischargeVideo: null, receiptImage: null}); }}
           className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold"
         >
           توثيق عملية أخرى
@@ -136,13 +107,6 @@ const DocumentTransfer: React.FC = () => {
           {isOnline ? 'متصل' : 'غير متصل (حفظ محلي)'}
         </div>
       </div>
-
-      {error && (
-        <div className="bg-rose-50 border border-rose-100 p-4 rounded-xl flex items-center gap-3 text-rose-600 text-sm font-bold">
-          <AlertTriangle size={20} />
-          {error}
-        </div>
-      )}
 
       {/* Progress Stepper */}
       <div className="flex items-center justify-between bg-white p-4 rounded-xl border shadow-sm">
@@ -169,8 +133,8 @@ const DocumentTransfer: React.FC = () => {
                 <select 
                   required
                   disabled={isProcessing}
-                  value={formData.hospital_id}
-                  onChange={(e) => setFormData({...formData, hospital_id: e.target.value})}
+                  value={formData.hospital}
+                  onChange={(e) => setFormData({...formData, hospital: e.target.value})}
                   className="w-full bg-slate-50 border-0 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-600 rounded-xl py-3 px-4"
                 >
                   <option value="">اختر المستشفى...</option>
@@ -193,7 +157,7 @@ const DocumentTransfer: React.FC = () => {
               <button 
                 type="button" 
                 onClick={() => setStep(2)}
-                disabled={!formData.hospital_id || !formData.quantity || isProcessing}
+                disabled={!formData.hospital || !formData.quantity || isProcessing}
                 className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold disabled:opacity-50"
               >
                 التالي: فيديوهات التوثيق
@@ -218,6 +182,12 @@ const DocumentTransfer: React.FC = () => {
                     </div>
                   </div>
                   <span className="text-xs font-bold text-blue-600">{progress}%</span>
+                </div>
+              )}
+
+              {processingError && (
+                <div className="bg-rose-50 border border-rose-100 p-3 rounded-xl text-rose-600 text-sm font-bold">
+                  {processingError}
                 </div>
               )}
 
@@ -372,7 +342,7 @@ const DocumentTransfer: React.FC = () => {
                   className={`flex items-center justify-center gap-2 py-4 rounded-xl font-bold text-white shadow-lg transition-all ${isSubmitting ? 'bg-slate-400' : 'bg-blue-600 shadow-blue-100'}`}
                 >
                   {isSubmitting ? (
-                    <span className="flex items-center gap-2">جارٍ الرفع...</span>
+                    <span className="flex items-center gap-2">جارٍ المعالجة...</span>
                   ) : (
                     <>
                       {isOnline ? <Send size={20} /> : <Save size={20} />}
