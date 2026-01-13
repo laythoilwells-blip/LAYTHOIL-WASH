@@ -1,0 +1,9 @@
+{
+  "name": "LAYTHOIL-WASH: Water Management System",
+  "description": "نظام متكامل لإدارة نقل المياه من شركة ليث أويل إلى المستشفيات، يضم بوابات للمسؤولين والسائقين مع دعم غير متصل بالإنترنت.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
